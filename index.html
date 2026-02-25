@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Secure Encryptor</title>
+
+<style>
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
+    font-family:Arial, sans-serif;
+}
+body{
+    background:#0f172a;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    height:100vh;
+}
+.container{
+    background:#1e293b;
+    padding:25px;
+    width:380px;
+    border-radius:10px;
+    box-shadow:0 0 20px rgba(0,0,0,0.5);
+}
+h1{
+    text-align:center;
+    color:#38bdf8;
+    margin-bottom:15px;
+}
+textarea,input{
+    width:100%;
+    padding:10px;
+    margin-bottom:12px;
+    border:none;
+    border-radius:6px;
+    background:#334155;
+    color:white;
+}
+textarea{height:80px;}
+.buttons{
+    display:flex;
+    justify-content:space-between;
+    margin-bottom:10px;
+}
+button{
+    width:48%;
+    padding:8px;
+    border:none;
+    border-radius:6px;
+    font-weight:bold;
+    cursor:pointer;
+}
+.encrypt{background:#22c55e;color:black;}
+.decrypt{background:#ef4444;color:white;}
+.share{
+    width:100%;
+    background:#3b82f6;
+    color:white;
+    margin-top:5px;
+}
+button:hover{opacity:0.85;}
+</style>
+
+</head>
+<body>
+
+<div class="container">
+<h1>🔐 Secure Encryptor</h1>
+
+<textarea id="inputText" placeholder="Enter message"></textarea>
+<input type="password" id="password" placeholder="Enter password">
+
+<div class="buttons">
+<button class="encrypt">Encrypt</button>
+<button class="decrypt">Decrypt</button>
+</div>
+
+<textarea id="outputText" placeholder="Output" readonly></textarea>
+<button class="share">Share</button>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function(){
+
+const inputText = document.getElementById("inputText");
+const outputText = document.getElementById("outputText");
+const password = document.getElementById("password");
+
+async function getKey(pass, salt){
+    const enc = new TextEncoder();
+    const keyMaterial = await crypto.subtle.importKey(
+        "raw",
+        enc.encode(pass),
+        {name:"PBKDF2"},
+        false,
+        ["deriveKey"]
+    );
+
+    return crypto.subtle.deriveKey(
+        {
+            name:"PBKDF2",
+            salt:salt,
+            iterations:100000,
+            hash:"SHA-256"
+        },
+        keyMaterial,
+        {name:"AES-GCM",length:256},
+        false,
+        ["encrypt","decrypt"]
+    );
+}
+
+function bufferToBase64(buffer){
+    return btoa(String.fromCharCode(...new Uint8Array(buffer)));
+}
+
+function base64ToBuffer(base64){
+    return Uint8Array.from(atob(base64),c=>c.charCodeAt(0));
+}
+
+async function encrypt(){
+    if(!inputText.value || !password.value){
+        alert("Enter message and password");
+        return;
+    }
+
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+
+    const key = await getKey(password.value,salt);
+
+    const encrypted = await crypto.subtle.encrypt(
+        {name:"AES-GCM",iv:iv},
+        key,
+        new TextEncoder().encode(inputText.value)
+    );
+
+    const combined = new Uint8Array([...salt,...iv,...new Uint8Array(encrypted)]);
+    outputText.value = bufferToBase64(combined);
+}
+
+async function decrypt(){
+    if(!outputText.value || !password.value){
+        alert("Enter encrypted text and password");
+        return;
+    }
+
+    try{
+        const combined = base64ToBuffer(outputText.value);
+
+        const salt = combined.slice(0,16);
+        const iv = combined.slice(16,28);
+        const data = combined.slice(28);
+
+        const key = await getKey(password.value,salt);
+
+        const decrypted = await crypto.subtle.decrypt(
+            {name:"AES-GCM",iv:iv},
+            key,
+            data
+        );
+
+        outputText.value = new TextDecoder().decode(decrypted);
+    }catch{
+        alert("Wrong password or corrupted data");
+    }
+}
+
+async function shareText(){
+    if(!outputText.value){
+        alert("Nothing to share");
+        return;
+    }
+
+    if(navigator.share){
+        await navigator.share({
+            title:"Encrypted Message",
+            text:outputText.value
+        });
+    }else{
+        alert("Sharing not supported on this device");
+    }
+}
+
+document.querySelector(".encrypt").addEventListener("click",encrypt);
+document.querySelector(".decrypt").addEventListener("click",decrypt);
+document.querySelector(".share").addEventListener("click",shareText);
+
+});
+</script>
+
+</body>
+</html>
